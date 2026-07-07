@@ -41,7 +41,7 @@ python .\learn-anything\hooks\skill_candidate_builder.py --source-file .\tests\f
 Copy or sync `learn-anything` into:
 
 ```text
-C:\Users\Service01\.codex\skills\learn-anything
+~/.codex/skills/learn-anything
 ```
 
 Then verify the installed `SKILL.md` can be read from that path.
