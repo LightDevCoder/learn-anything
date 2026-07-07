@@ -1,12 +1,14 @@
 # Skill-Learn-anything
 
-`learn-anything` is a Codex meta-skill for turning conversations, transcripts, project notes, folder workflows, documentation, or other source material into Skill Creator compatible skills.
+`learn-anything` is a portable agent meta-skill for turning conversations, transcripts, project notes, folder workflows, documentation, or other source material into reusable Skill Creator compatible skills.
 
 The core rule is simple: extract repeatable operating methods, not passive summaries.
 
 ## Repository Layout
 
-- `learn-anything/SKILL.md` - the installable Codex skill.
+- `learn-anything/SKILL.md` - the installable agent skill.
+
+Compatible consumers include OpenAI Codex, Claude Code, Gemini CLI, Cursor agents, Windsurf agents, GitHub Copilot coding agent, Aider, OpenCode, Roo Code, Continue, CrewAI, LangGraph, AutoGen, ReAct-style custom agents, and other Markdown-reading coding, research, documentation, or automation agents.
 - `learn-anything/hooks/learn_gate.py` - pre-task scoring and mode selection.
 - `learn-anything/hooks/session_reflector.py` - post-task reusable-learning detection.
 - `learn-anything/hooks/skill_candidate_builder.py` - deterministic source-to-skill candidate builder.

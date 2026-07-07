@@ -2,7 +2,7 @@
 
 Purpose: capture browser-based documentation into reusable local skill guidance.
 
-Use when: Codex must turn a website, product manual, or repository documentation workflow into repeatable skill instructions for future agents.
+Use when: an AI agent must turn a website, product manual, or repository documentation workflow into repeatable skill instructions for future agents.
 
 Workflow:
 

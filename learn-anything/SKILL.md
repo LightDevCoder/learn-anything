@@ -1,15 +1,35 @@
 ---
 name: learn-anything
-description: Turn conversations, transcripts, project notes, folder workflows, documentation, or other sources into reusable Codex skills. Use when the user asks to create, update, distill, or "learn" a workflow as a skill; asks to preserve repeated operating methods for future agents; provides corrections/failure modes that should become durable procedure; or wants arbitrary source material transformed into Skill Creator compatible skill instructions.
+description: Turn conversations, transcripts, project notes, folder workflows, documentation, or other sources into reusable agent skills and Skill Creator compatible instructions. Use when a user asks to create, update, distill, or "learn" a workflow as a skill; preserve repeated operating methods for future AI agents; encode corrections/failure modes as durable procedure; or transform source material into portable skill guidance for coding agents, research agents, automation agents, or custom agent frameworks.
 ---
 
 # Learn Anything
 
 ## Purpose
 
-Use this skill to convert arbitrary source material into a compact, reusable Codex skill. Extract repeatable operating methods, not passive summaries of what happened.
+Use this skill to convert arbitrary source material into a compact, reusable agent skill. Extract repeatable operating methods, not passive summaries of what happened.
 
-The generated skill should help a future agent perform the work better with less rediscovery. It should preserve triggers, decisions, commands, constraints, failure modes, verification gates, and output contracts that are likely to recur.
+The generated skill should help a future AI agent perform the work better with less rediscovery. It should preserve triggers, decisions, commands, constraints, failure modes, verification gates, and output contracts that are likely to recur.
+
+## Compatible Agents
+
+Write generated skills so they can be adapted by common AI agent hosts, not only one runtime. Expected consumers include:
+
+- OpenAI Codex and Codex-style local coding agents
+- Claude Code
+- Gemini CLI
+- Cursor agents
+- Windsurf agents
+- GitHub Copilot coding agent
+- Aider
+- OpenCode
+- Roo Code
+- Continue
+- CrewAI agents
+- LangGraph agents
+- AutoGen agents
+- ReAct-style custom agents
+- Other file-reading coding, research, documentation, or automation agents that can follow Markdown instructions and run bundled scripts
 
 ## Source Intake
 
@@ -39,7 +59,7 @@ Every generated skill must include:
 
 - `SKILL.md` with YAML frontmatter containing only `name` and `description`
 - A kebab-case folder and skill name under 64 characters
-- A description that states both what the skill does and when Codex should use it
+- A description that states both what the skill does and when an agent should use it
 - A body written as direct operating instructions
 - Sections or equivalent content covering purpose, trigger, inputs, workflow, constraints, output format, and quality checks
 - Bundled resources only when they are directly useful

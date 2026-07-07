@@ -148,8 +148,11 @@ def _extract_constraints(source: str) -> list[str]:
     constraints = _extract_section(source, "Constraints") or _extract_section(source, "Rules")
     corrections = []
     for line in source.splitlines():
-        if re.search(r"\b(?:do not|never|instead|must|avoid)\b|不要|必须|而是|失败|错误", line, flags=re.IGNORECASE):
-            corrections.append(_sentence(re.sub(r"^(?:[-*]|\d+[.)])\s+", "", line.strip())))
+        stripped = line.strip()
+        if re.match(r"^(?:use when|trigger|description)\s*:", stripped, flags=re.IGNORECASE):
+            continue
+        if re.search(r"\b(?:do not|never|instead|must|avoid)\b|不要|必须|而是|失败|错误", stripped, flags=re.IGNORECASE):
+            corrections.append(_sentence(re.sub(r"^(?:[-*]|\d+[.)])\s+", "", stripped)))
     combined = constraints + [item for item in corrections if item not in constraints]
     return (combined or DEFAULT_CONSTRAINTS)[:8]
 
@@ -184,7 +187,7 @@ def _extract_trigger(source: str, title: str) -> str:
             trigger = _sentence(match.group(1))
             if len(trigger.split()) >= 5:
                 return trigger
-    return f"Use when Codex needs to repeat the {title} method from source notes, transcripts, project files, or user corrections."
+    return f"Use when an AI agent needs to repeat the {title} method from source notes, transcripts, project files, or user corrections."
 
 
 def _sentence(value: str) -> str:
@@ -206,7 +209,7 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
     quality_checks = _extract_quality_checks(source)
     output_format = _extract_output_format(source)
 
-    description = f"{_sentence(trigger).rstrip('.')} Use when this repeatable workflow should be applied, taught, validated, or encoded for future Codex agents."
+    description = f"{_sentence(trigger)} Use when this repeatable workflow should be applied, taught, validated, or encoded for future AI agents."
 
     skill_md = _render_skill_md(
         name=name,
