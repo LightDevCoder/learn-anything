@@ -1,0 +1,4 @@
+interface:
+  display_name: "Learn Anything"
+  short_description: "Turn sources into reusable Codex skills"
+  default_prompt: "Use $learn-anything to turn this workflow source into a reusable Codex skill."

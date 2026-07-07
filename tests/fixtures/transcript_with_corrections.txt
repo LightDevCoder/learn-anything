@@ -1,0 +1,5 @@
+User: This is not just a summary. I want the future agent to reuse the workflow.
+Assistant: I wrote broad notes.
+User: Do not blur folder boundaries. Preserve exact commands like `corepack pnpm@9.15.4 test` and put repeated corrections into AGENTS.md next time.
+Assistant: The first attempt failed because I treated a one-off issue as general guidance.
+User: Correct it into a repeatable process with clear checks and failure modes.

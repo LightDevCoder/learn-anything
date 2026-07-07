@@ -1,0 +1,22 @@
+{
+  "learn_gate": {
+    "decisions": ["normal_task", "observe_and_summarize", "create_or_update_skill"],
+    "low_confidence_below": 0.4,
+    "observe_threshold": 7
+  },
+  "session_reflector": {
+    "decisions": ["ignore", "summarize_candidate", "create_skill"],
+    "candidate_threshold": 8
+  },
+  "skill_candidate_builder": {
+    "required_sections": [
+      "purpose",
+      "trigger",
+      "inputs",
+      "workflow",
+      "constraints",
+      "output_format",
+      "quality_checks"
+    ]
+  }
+}
