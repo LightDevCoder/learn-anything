@@ -60,6 +60,49 @@ class PackageBuilderTests(unittest.TestCase):
         with self.assertRaisesRegex(package_builder.PackageBuildError, "purpose"):
             package_builder.validate_contract(contract)
 
+    def test_tampered_contract_metadata_and_envelope_are_rejected(self) -> None:
+        cases = [
+            ("source kind", {"source_kind": "one_off_narration"}, "reusable_method"),
+            ("invocation type", {"method_contract": {"invocation_type": []}}, "invocation_type"),
+            ("confidence type", {"method_contract": {"confidence": True}}, "confidence"),
+            ("title marker", {"method_contract": {"title": "TBD"}}, "title"),
+            ("source evidence shape", {"method_contract": {"source_evidence": {"commands": "run"}}}, "source_evidence"),
+        ]
+        for label, changes, error in cases:
+            with self.subTest(label=label):
+                payload = json.loads(json.dumps(complete_payload()))
+                if "source_kind" in changes:
+                    payload["source_kind"] = changes["source_kind"]
+                else:
+                    payload["method_contract"].update(changes["method_contract"])
+                with self.assertRaisesRegex(package_builder.PackageBuildError, error):
+                    package_builder.validate_contract(payload)
+
+    def test_placeholder_variants_and_generic_boilerplate_are_rejected(self) -> None:
+        for field in ("purpose", "triggers", "inputs", "ordered_method", "decisions", "outputs", "verification"):
+            payload = json.loads(json.dumps(complete_payload()))
+            values = ["N/A"] if field != "ordered_method" else ["Collect the source.", "N/A"]
+            payload["method_contract"][field] = values
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(package_builder.PackageBuildError, field):
+                    package_builder.validate_contract(payload)
+
+        payload = json.loads(json.dumps(complete_payload()))
+        payload["method_contract"]["purpose"] = "Describe the purpose here"
+        with self.assertRaisesRegex(package_builder.PackageBuildError, "purpose"):
+            package_builder.validate_contract(payload)
+
+    def test_resource_declarations_are_unique_and_not_contradictory(self) -> None:
+        for resources, error in (
+            (["scripts/capture_docs.py", "scripts/capture_docs.py"], "duplicate"),
+            (["none", "scripts/capture_docs.py"], "mix"),
+        ):
+            payload = json.loads(json.dumps(complete_payload()))
+            payload["method_contract"]["resources"] = resources
+            with self.subTest(resources=resources):
+                with self.assertRaisesRegex(package_builder.PackageBuildError, error):
+                    package_builder.validate_contract(payload)
+
     def test_guardrail_mentioning_draft_tokens_is_not_treated_as_missing_evidence(self) -> None:
         payload = json.loads(json.dumps(complete_payload()))
         payload["method_contract"]["constraints"] = ["Do not leave TBD markers in the generated package."]
@@ -198,6 +241,31 @@ class PackageBuilderTests(unittest.TestCase):
             (package / "scripts" / "capture_docs.py").unlink()
             with self.assertRaisesRegex(package_builder.PackageBuildError, "missing"):
                 package_builder.install_package(package, Path(temporary) / "installed")
+
+    def test_install_rejects_extra_frontmatter_and_detects_missing_empty_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            build_root = Path(temporary) / "built"
+            package = Path(package_builder.build_package(complete_payload(), build_root)["package"])
+            skill_file = package / "SKILL.md"
+            skill_file.write_text(
+                skill_file.read_text(encoding="utf-8").replace(
+                    "name: browser-docs-capture-method\n",
+                    "name: browser-docs-capture-method\nversion: 1\n",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(package_builder.PackageBuildError, "only name and description"):
+                package_builder.install_package(package, Path(temporary) / "installed")
+
+            # Restore the generated frontmatter, then make a required empty
+            # directory visible only in the source package. It must not be
+            # mistaken for an idempotent install.
+            package = Path(package_builder.build_package(complete_payload(), build_root, allow_update=True)["package"])
+            package.joinpath("empty-resource-dir").mkdir()
+            installed = package_builder.install_package(package, Path(temporary) / "installed")
+            self.assertEqual(installed["outcome"], "installed")
+            package.joinpath("empty-resource-dir").rmdir()
+            self.assertEqual(package_builder.install_package(package, Path(temporary) / "installed")["outcome"], "no-op")
 
     def test_declared_resources_are_referenced_without_fabricating_files(self) -> None:
         payload = json.loads(json.dumps(complete_payload()))

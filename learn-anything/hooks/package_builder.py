@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import shutil
 import sys
@@ -38,8 +39,19 @@ REQUIRED_CONTRACT_FIELDS = (
 
 ALLOWED_INVOCATIONS = frozenset({"user-invoked", "model-invoked"})
 PLACEHOLDER_RE = re.compile(
-    r"(?:^|[^a-z0-9])(?:tbd|todo|unknown|placeholder|to be determined|"
+    r"(?:^|[^a-z0-9])(?:tbd|todo|unknown|placeholder|n/?a|not applicable|"
+    r"not available|to be determined|"
     r"to be completed|coming soon)(?:$|[^a-z0-9])",
+    re.IGNORECASE,
+)
+GENERIC_BOILERPLATE_RE = re.compile(
+    r"^(?:add|describe|document|insert|provide)\s+(?:the\s+)?"
+    r"(?:purpose|triggers?|inputs?|ordered method|workflow|steps?|"
+    r"decisions?|decision rules|constraints?|failure modes?|outputs?|"
+    r"verification|details)(?:\s+here)?$|"
+    r"^use when an ai agent needs to repeat the .+ method from source notes, "
+    r"transcripts, project files, or user corrections$|"
+    r"^return the generated or updated skill files plus a concise verification summary$",
     re.IGNORECASE,
 )
 STANDALONE_PLACEHOLDERS = frozenset(
@@ -57,12 +69,25 @@ STANDALONE_PLACEHOLDERS = frozenset(
         "todo",
         "n/a",
         "na",
+        "n.a.",
         "unknown",
         "not applicable",
         "not available",
+        "not applicable",
         "to be determined",
         "to be completed",
         "coming soon",
+    }
+)
+EXPLICIT_NO_RESOURCE_MARKERS = frozenset(
+    {
+        "none",
+        "no resource",
+        "no resources",
+        "no resource needed",
+        "no resources needed",
+        "no resource required",
+        "no resources required",
     }
 )
 GUARDRAIL_RE = re.compile(
@@ -90,6 +115,8 @@ def _standalone_placeholder(value: str) -> bool:
 
 def _unresolved_value(value: str, *, allow_guardrail: bool = False) -> bool:
     if _standalone_placeholder(value):
+        return True
+    if not allow_guardrail and GENERIC_BOILERPLATE_RE.fullmatch(value.strip()):
         return True
     if not PLACEHOLDER_RE.search(value):
         return False
@@ -126,6 +153,8 @@ def _contract_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
             raise PackageBuildError("package build requires an eligible promotion status")
         if payload.get("contract_visibility") != "internal":
             raise PackageBuildError("the Method Contract must remain internal")
+        if payload.get("source_kind") != "reusable_method":
+            raise PackageBuildError("package build requires a reusable_method source kind")
         contract = payload["method_contract"]
     else:
         contract = payload
@@ -144,15 +173,29 @@ def validate_contract(payload: dict[str, Any]) -> dict[str, Any]:
         raise PackageBuildError(f"missing contract fields: {', '.join(missing)}")
 
     purpose = contract["purpose"]
-    if not isinstance(purpose, str) or not purpose.strip() or PLACEHOLDER_RE.search(purpose):
+    if not isinstance(purpose, str) or not purpose.strip() or _unresolved_value(purpose):
         raise PackageBuildError("purpose must be concrete source evidence")
-    if contract["invocation_type"] not in ALLOWED_INVOCATIONS:
+    invocation_type = contract["invocation_type"]
+    if not isinstance(invocation_type, str) or invocation_type not in ALLOWED_INVOCATIONS:
         raise PackageBuildError("invocation_type must be user-invoked or model-invoked")
-    if contract["unresolved_gaps"] != []:
+    unresolved_gaps = contract["unresolved_gaps"]
+    if not isinstance(unresolved_gaps, list) or unresolved_gaps != []:
         raise PackageBuildError("unresolved_gaps must be empty before package build")
     confidence = contract["confidence"]
-    if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+    if (
+        isinstance(confidence, bool)
+        or not isinstance(confidence, (int, float))
+        or not math.isfinite(float(confidence))
+        or not 0 <= confidence <= 1
+    ):
         raise PackageBuildError("confidence must be a number between 0 and 1")
+
+    for field in ("title", "name"):
+        value = contract.get(field)
+        if value is not None and (
+            not isinstance(value, str) or not value.strip() or _unresolved_value(value)
+        ):
+            raise PackageBuildError(f"{field} must be concrete source evidence")
 
     normalized: dict[str, Any] = dict(contract)
     normalized["purpose"] = purpose.strip()
@@ -167,24 +210,35 @@ def validate_contract(payload: dict[str, Any]) -> dict[str, Any]:
     normalized["outputs"] = _as_nonempty_strings(contract["outputs"], "outputs")
     normalized["verification"] = _as_nonempty_strings(contract["verification"], "verification")
 
-    resources = _as_nonempty_strings(contract["resources"], "resources")
-    if len(resources) != 1 or resources[0].lower() not in {
-        "none",
-        "no resource",
-        "no resources",
-        "no resource needed",
-        "no resources needed",
-        "no resource required",
-        "no resources required",
-    }:
-        normalized["resources"] = resources
-    else:
+    resources = _as_nonempty_strings(contract["resources"], "resources", reject_placeholders=False)
+    resource_markers = {
+        re.sub(r"\s+", " ", value).strip().rstrip(".!?:;,").lower() for value in resources
+    }
+    if len(resources) == 1 and resource_markers <= EXPLICIT_NO_RESOURCE_MARKERS:
         normalized["resources"] = ["none"]
+    else:
+        if resource_markers & EXPLICIT_NO_RESOURCE_MARKERS:
+            raise PackageBuildError("resources cannot mix an explicit no-resource marker with resources")
+        if any(_unresolved_value(value) for value in resources):
+            raise PackageBuildError("resources contains unresolved placeholder evidence")
+        resource_paths = [_resource_path(value) for value in resources]
+        if any(not path for path in resource_paths):
+            raise PackageBuildError("resources contains an empty resource path")
+        if len(set(resource_paths)) != len(resource_paths):
+            raise PackageBuildError("resources contains duplicate declarations")
+        normalized["resources"] = resources
 
     evidence = contract.get("source_evidence", {})
     if evidence is not None and not isinstance(evidence, dict):
         raise PackageBuildError("source_evidence must be an object when present")
-    normalized["source_evidence"] = evidence or {}
+    normalized_evidence: dict[str, list[str]] = {}
+    for label, values in (evidence or {}).items():
+        if not isinstance(label, str) or not label.strip() or not isinstance(values, list):
+            raise PackageBuildError("source_evidence values must be lists of strings")
+        if any(not isinstance(value, str) or not value.strip() for value in values):
+            raise PackageBuildError("source_evidence contains missing or non-string values")
+        normalized_evidence[label.strip()] = [value.strip() for value in values]
+    normalized["source_evidence"] = normalized_evidence
     return normalized
 
 
@@ -267,6 +321,8 @@ def _managed_names(package_dir: Path, *, require_files: bool = False) -> list[st
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise PackageBuildError(f"managed-resource manifest is unreadable: {manifest}") from exc
     values = data.get("managed_resources") if isinstance(data, dict) else None
+    if not isinstance(data, dict) or data.get("format") != 1:
+        raise PackageBuildError(f"managed-resource manifest has an unsupported format: {manifest}")
     if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
         raise PackageBuildError(f"managed-resource manifest is invalid: {manifest}")
     root = package_dir.resolve()
@@ -307,6 +363,20 @@ def _remove_superseded_resources(package_dir: Path, previous: list[str], current
         while parent != package_dir.resolve() and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
             parent = parent.parent
+
+
+def _assert_no_symlinks(root: Path, *, label: str) -> None:
+    """Keep package build and install boundaries inside the named tree."""
+
+    if root.is_symlink():
+        raise PackageBuildError(f"{label} must not be a symbolic link: {root}")
+    try:
+        paths = root.rglob("*")
+    except OSError as exc:
+        raise PackageBuildError(f"cannot inspect {label}: {root}") from exc
+    for path in paths:
+        if path.is_symlink():
+            raise PackageBuildError(f"{label} contains a symbolic link: {path}")
 
 
 def _description(contract: dict[str, Any]) -> str:
@@ -416,10 +486,22 @@ description: {json.dumps(_description(contract), ensure_ascii=False)}
 
 def _read_frontmatter_name(skill_file: Path) -> str:
     text = skill_file.read_text(encoding="utf-8")
-    match = re.search(r"(?ms)^---\s*\nname:\s*([^\n]+)\n(?:description:.*\n)?---", text)
-    if not match:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
         raise PackageBuildError(f"{skill_file} has no valid name frontmatter")
-    return match.group(1).strip()
+    try:
+        closing = lines.index("---", 1)
+    except ValueError as exc:
+        raise PackageBuildError(f"{skill_file} has no valid name frontmatter") from exc
+    fields: dict[str, str] = {}
+    for line in lines[1:closing]:
+        match = re.fullmatch(r"\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(\S.*)\s*", line)
+        if not match or match.group(1) in fields:
+            raise PackageBuildError(f"{skill_file} has invalid frontmatter")
+        fields[match.group(1)] = match.group(2).strip()
+    if set(fields) != {"name", "description"}:
+        raise PackageBuildError(f"{skill_file} frontmatter must contain only name and description")
+    return fields["name"]
 
 
 def _marker(skill_file: Path) -> str | None:
@@ -464,8 +546,12 @@ def build_package(
     resource_plan = _resource_plan(contract["resources"], resource_root, package_dir)
     managed_names = sorted(target.relative_to(package_dir).as_posix() for _, target in resource_plan)
 
+    if package_dir.is_symlink():
+        raise PackageBuildError(f"package destination is a symbolic link: {package_dir}")
     if package_dir.exists() and not package_dir.is_dir():
         raise PackageBuildError(f"package destination is not a directory: {package_dir}")
+    if package_dir.exists():
+        _assert_no_symlinks(package_dir, label="package destination")
     if not package_dir.exists():
         package_dir.mkdir(parents=True)
         _write_atomic(skill_file, rendered)
@@ -503,8 +589,13 @@ def build_package(
 def _same_tree(left: Path, right: Path) -> bool:
     """Return whether every source file matches, ignoring destination extras."""
 
+    left_dirs = sorted(
+        path.relative_to(left).as_posix()
+        for path in left.rglob("*")
+        if path.is_dir() and not path.is_symlink()
+    )
     left_files = sorted(path.relative_to(left).as_posix() for path in left.rglob("*") if path.is_file())
-    return all(
+    return all((right / relative).is_dir() for relative in left_dirs) and all(
         (right / relative).is_file() and (left / relative).read_bytes() == (right / relative).read_bytes()
         for relative in left_files
     )
@@ -518,9 +609,13 @@ def install_package(
 ) -> dict[str, Any]:
     """Install a package into a clean host directory idempotently."""
 
-    source = Path(package_dir).resolve()
+    source_input = Path(package_dir)
+    if source_input.is_symlink():
+        raise PackageBuildError("install source must not be a symbolic link")
+    source = source_input.resolve()
     if not source.is_dir() or not (source / "SKILL.md").is_file():
         raise PackageBuildError("install source must contain a SKILL.md")
+    _assert_no_symlinks(source, label="install source")
     if _marker(source / "SKILL.md") is None:
         raise PackageBuildError("install source is not a generated learn-anything package")
     if not (source / MANAGED_MANIFEST).is_file():
@@ -529,9 +624,15 @@ def install_package(
     name = _read_frontmatter_name(source / "SKILL.md")
     if not NAME_RE.fullmatch(name):
         raise PackageBuildError("installed package name must be kebab-case")
+    if source.name != name:
+        raise PackageBuildError("install source directory must match its frontmatter name")
     destination = Path(install_root).resolve() / name
+    if destination.is_symlink():
+        raise PackageBuildError(f"install destination is a symbolic link: {destination}")
     if destination.exists() and not destination.is_dir():
         raise PackageBuildError(f"install destination is not a directory: {destination}")
+    if destination.exists():
+        _assert_no_symlinks(destination, label="install destination")
     if not destination.exists():
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source, destination)
