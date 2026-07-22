@@ -86,6 +86,25 @@ class PackageBuilderTests(unittest.TestCase):
                 (Path(updated["package"]) / "SKILL.md").read_text(encoding="utf-8"),
             )
 
+    def test_update_removes_only_resources_managed_by_the_previous_contract(self) -> None:
+        first = json.loads(json.dumps(complete_payload()))
+        first["method_contract"]["resources"] = ["scripts/capture_docs.py"]
+        second = json.loads(json.dumps(first))
+        second["method_contract"]["resources"] = ["none"]
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary) / "resources"
+            (resource_root / "scripts").mkdir(parents=True)
+            (resource_root / "scripts" / "capture_docs.py").write_text("print('capture')\n", encoding="utf-8")
+            built = package_builder.build_package(first, Path(temporary) / "built", resource_root=resource_root)
+            package = Path(built["package"])
+            (package / "notes.txt").write_text("user-owned\n", encoding="utf-8")
+            updated = package_builder.build_package(second, Path(temporary) / "built", allow_update=True)
+            self.assertEqual(updated["outcome"], "updated")
+            self.assertFalse((package / "scripts" / "capture_docs.py").exists())
+            self.assertFalse((package / "scripts").exists())
+            self.assertEqual((package / "notes.txt").read_text(encoding="utf-8"), "user-owned\n")
+            self.assertEqual(json.loads((package / package_builder.MANAGED_MANIFEST).read_text(encoding="utf-8"))["managed_resources"], [])
+
             duplicate_root = Path(temporary) / "duplicate"
             duplicate_root.mkdir()
             package_dir = duplicate_root / "browser-docs-capture-method"

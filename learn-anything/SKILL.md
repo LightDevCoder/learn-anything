@@ -85,7 +85,9 @@ Treat builder results as explicit state:
 
 - `created` means a new package was written.
 - `updated` requires `--update` and changes only the generated package
-  instructions while preserving unrelated files.
+  instructions while preserving unrelated files. The builder tracks copied
+  resources in `.learn-anything-managed.json` and removes only resources that
+  the previous generated contract owned but the new contract omits.
 - `no-op` means the same contract already produced the package; preserve it.
 - `duplicate` means an unowned package or different installation already
   exists; stop and obtain explicit authority before updating it.
