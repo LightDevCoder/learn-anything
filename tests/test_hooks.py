@@ -213,6 +213,15 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         self.assertEqual(result["missing_information"], ["purpose"])
         self.assertIn("<placeholder>", "\n".join(result["placeholder_source_values"]["purpose"]))
 
+    def test_inline_tbd_token_in_method_defining_field_blocks_promotion(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "inline_tbd_method_source.md")
+
+        self.assertEqual(result["outcome"], "blocked")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertEqual(result["missing_information"], ["purpose"])
+        self.assertIn("Capture TBD documentation", "\n".join(result["placeholder_source_values"]["purpose"]))
+
     def test_complete_method_with_negated_one_off_language_is_not_demoted(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "complete_method_with_safe_narration.md")
 

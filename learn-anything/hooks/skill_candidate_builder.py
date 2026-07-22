@@ -30,6 +30,18 @@ REQUIRED_METHOD_FIELDS = (
     "verification",
 )
 
+INLINE_DRAFT_TOKEN_FIELDS = frozenset(
+    {
+        "purpose",
+        "triggers",
+        "inputs",
+        "ordered_method",
+        "decisions",
+        "outputs",
+        "verification",
+    }
+)
+
 SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "purpose": ("Purpose",),
     "triggers": ("Triggers", "Trigger", "Use When", "When To Use"),
@@ -179,6 +191,7 @@ INLINE_PLACEHOLDER_MARKUP_PATTERN = re.compile(
     r"\[\s*(?:placeholder|tbd|todo|unknown|to be determined|to be completed)\s*\])",
     flags=re.IGNORECASE,
 )
+INLINE_DRAFT_TOKEN_PATTERN = re.compile(r"\b(?:tbd|todo)\b", flags=re.IGNORECASE)
 WINDOWS_PATH_PATTERN = re.compile(r"[A-Za-z]:\\[^\s`\"'()\[\],;]+")
 POSIX_PATH_PATTERN = re.compile(r"(?<!\w)/(?:[\w.-]+/)+[\w.-]+")
 CORRECTION_PATTERN = re.compile(
@@ -364,6 +377,22 @@ def _placeholder_values(values: Any) -> list[str]:
     return [value for value in candidates if _is_placeholder(value)]
 
 
+def _inline_draft_token_values(field: str, values: Any) -> list[str]:
+    if field not in INLINE_DRAFT_TOKEN_FIELDS:
+        return []
+    if isinstance(values, str):
+        candidates = [values]
+    elif isinstance(values, list):
+        candidates = [value for value in values if isinstance(value, str)]
+    else:
+        candidates = []
+    return [value for value in candidates if INLINE_DRAFT_TOKEN_PATTERN.search(value)]
+
+
+def _unresolved_field_values(field: str, values: Any) -> list[str]:
+    return _unique(_placeholder_values(values) + _inline_draft_token_values(field, values))
+
+
 def _unresolved_resource_placeholders(values: list[str]) -> list[str]:
     if values and all(_placeholder_normalized(value) in EXPLICIT_NO_RESOURCE_MARKERS for value in values):
         return []
@@ -458,7 +487,7 @@ def _missing_information(fields: dict[str, Any], raw_values: dict[str, list[str]
     for field in REQUIRED_METHOD_FIELDS:
         value = fields[field]
         source_values = raw_values[field] if raw_values is not None else value
-        if _placeholder_values(source_values):
+        if _unresolved_field_values(field, source_values):
             present = False
         elif field == "ordered_method":
             present = isinstance(value, list) and len(value) >= 2
@@ -564,13 +593,13 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
             field: (
                 unresolved_resource_placeholders
                 if field == "resources"
-                else _placeholder_values(raw_values[field])
+                else _unresolved_field_values(field, raw_values[field])
             )
             for field in missing_information
             if (
                 unresolved_resource_placeholders
                 if field == "resources"
-                else _placeholder_values(raw_values[field])
+                else _unresolved_field_values(field, raw_values[field])
             )
         }
         required_source_gaps = {field: SOURCE_GAP_GUIDANCE[field] for field in missing_information}
