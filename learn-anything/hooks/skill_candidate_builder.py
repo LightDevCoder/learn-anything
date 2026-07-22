@@ -55,6 +55,7 @@ SOURCE_GAP_GUIDANCE = {
     "constraints": "Record scope boundaries, corrections, or rules that constrain the method.",
     "failure_modes": "Record known failure states, blockers, or recovery boundaries.",
     "outputs": "State the concrete result produced by the method.",
+    "resources": "State the required resource or explicitly record that no resource is needed.",
     "verification": "State how a future agent verifies that the result is acceptable.",
 }
 
@@ -68,7 +69,7 @@ ONE_OFF_PATTERNS = (
 )
 
 NEGATED_ONE_OFF_PATTERNS = (
-    r"\b(?:not|never|is not|isn't|isnt)\s+(?:a\s+)?one[- ]off\b",
+    r"\b(?:not|never|is not|isn't|isnt|no longer)\s+(?:(?:merely|just|only)\s+)?(?:a\s+)?one[- ]off\b",
     r"\bnot\s+unique to\b",
 )
 
@@ -82,7 +83,33 @@ PASSIVE_SUMMARY_PATTERNS = (
 )
 
 NEGATED_PASSIVE_SUMMARY_PATTERNS = (
-    r"\b(?:not|never|is not|isn't|isnt)\s+(?:a\s+)?passive summary\b",
+    r"\b(?:not|never|is not|isn't|isnt|no longer)\s+(?:(?:merely|just|only)\s+)?(?:a\s+)?passive summary\b",
+)
+
+EMBEDDED_PLACEHOLDER_MARKERS = (
+    "tbd",
+    "todo",
+    "n/a",
+    "na",
+    "unknown",
+    "placeholder",
+    "to be determined",
+    "to be completed",
+    "not available",
+    "not applicable",
+    "coming soon",
+)
+
+EXPLICIT_NO_RESOURCE_MARKERS = frozenset(
+    {
+        "none",
+        "no resource",
+        "no resources",
+        "no resource needed",
+        "no resources needed",
+        "no resource required",
+        "no resources required",
+    }
 )
 
 PLACEHOLDER_MARKERS = frozenset(
@@ -141,6 +168,7 @@ COMMAND_PATTERN = re.compile(
     r"(?:^|\s)(?:python(?:3)?|pytest|npm|pnpm|corepack|git|gh|cargo|node)\b",
     flags=re.IGNORECASE,
 )
+FENCED_CODE_BLOCK_PATTERN = re.compile(r"```[^\r\n]*\r?\n(.*?)```", flags=re.DOTALL)
 WINDOWS_PATH_PATTERN = re.compile(r"[A-Za-z]:\\[^\s`\"'()\[\],;]+")
 POSIX_PATH_PATTERN = re.compile(r"(?<!\w)/(?:[\w.-]+/)+[\w.-]+")
 CORRECTION_PATTERN = re.compile(
@@ -295,6 +323,11 @@ def _is_placeholder(value: str) -> bool:
         return True
     if normalized in GENERIC_BOILERPLATE_VALUES:
         return True
+    for marker in EMBEDDED_PLACEHOLDER_MARKERS:
+        escaped_marker = re.escape(marker)
+        embedded_pattern = rf"(?:^{escaped_marker}(?=$|[^a-z0-9])|(?:^|[^a-z0-9]){escaped_marker}$)"
+        if re.search(embedded_pattern, normalized, flags=re.IGNORECASE):
+            return True
     return any(re.fullmatch(pattern, normalized, flags=re.IGNORECASE) for pattern in GENERIC_BOILERPLATE_PATTERNS)
 
 
@@ -308,9 +341,20 @@ def _placeholder_values(values: Any) -> list[str]:
     return [value for value in candidates if _is_placeholder(value)]
 
 
+def _unresolved_resource_placeholders(values: list[str]) -> list[str]:
+    if values and all(_placeholder_normalized(value) in EXPLICIT_NO_RESOURCE_MARKERS for value in values):
+        return []
+    return _placeholder_values(values)
+
+
 def _preserved_details(source: str, sections: dict[str, list[str]]) -> dict[str, list[str]]:
     code_spans = re.findall(r"`([^`\r\n]+)`", source)
     commands = [span for span in code_spans if COMMAND_PATTERN.search(span)]
+    for fenced_block in FENCED_CODE_BLOCK_PATTERN.findall(source):
+        for line in fenced_block.splitlines():
+            command = re.sub(r"^\s*\$\s?", "", line).strip()
+            if re.match(r"^(?:python(?:3)?|pytest|npm|pnpm|corepack|git|gh|cargo|node)\b", command, flags=re.IGNORECASE):
+                commands.append(command)
     paths = [span for span in code_spans if WINDOWS_PATH_PATTERN.search(span) or POSIX_PATH_PATTERN.search(span)]
     paths.extend(WINDOWS_PATH_PATTERN.findall(source))
     paths.extend(POSIX_PATH_PATTERN.findall(source))
@@ -369,6 +413,13 @@ def _source_kind(source: str, sections: dict[str, list[str]]) -> str:
         return "one_off_narration"
     if _has_affirmative_context_signal(
         context,
+        PASSIVE_SUMMARY_PATTERNS,
+        NEGATED_PASSIVE_SUMMARY_PATTERNS,
+    ):
+        return "passive_summary"
+    structured_passive_context = "\n".join(sections["purpose"] + sections["triggers"])
+    if _has_affirmative_context_signal(
+        structured_passive_context,
         PASSIVE_SUMMARY_PATTERNS,
         NEGATED_PASSIVE_SUMMARY_PATTERNS,
     ):
@@ -480,11 +531,22 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
         )
 
     missing_information = _missing_information(fields, raw_values)
+    unresolved_resource_placeholders = _unresolved_resource_placeholders(raw_values["resources"])
+    if unresolved_resource_placeholders:
+        missing_information.append("resources")
     if missing_information:
         placeholder_source_values = {
-            field: _placeholder_values(raw_values[field])
+            field: (
+                unresolved_resource_placeholders
+                if field == "resources"
+                else _placeholder_values(raw_values[field])
+            )
             for field in missing_information
-            if _placeholder_values(raw_values[field])
+            if (
+                unresolved_resource_placeholders
+                if field == "resources"
+                else _placeholder_values(raw_values[field])
+            )
         }
         return {
             "outcome": "blocked",

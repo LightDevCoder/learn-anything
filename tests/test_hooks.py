@@ -194,6 +194,16 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         self.assertIn("TBD", result["placeholder_source_values"]["purpose"])
         self.assertIn("Describe the decision rules here.", result["placeholder_source_values"]["decisions"])
 
+    def test_composite_placeholders_and_unresolved_resources_block_promotion(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "composite_placeholder_method_source.md")
+
+        self.assertEqual(result["outcome"], "blocked")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertEqual(result["missing_information"], ["purpose", "resources"])
+        self.assertIn("TBD - decide later", result["placeholder_source_values"]["purpose"])
+        self.assertIn("scripts/capture_docs.py: TBD", result["placeholder_source_values"]["resources"])
+
     def test_complete_method_with_negated_one_off_language_is_not_demoted(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "complete_method_with_safe_narration.md")
 
@@ -206,6 +216,12 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "method_contract")
         self.assertIn("no procedure", "\n".join(result["method_contract"]["failure_modes"]).lower())
 
+    def test_broader_negated_one_off_and_passive_language_is_not_demoted(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "complete_method_with_broader_negation.md")
+
+        self.assertEqual(result["outcome"], "method_contract")
+        self.assertEqual(result["source_kind"], "reusable_method")
+
     def test_structured_affirmative_one_off_method_is_not_promoted(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "structured_one_off_method_source.md")
 
@@ -215,12 +231,28 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         self.assertNotIn("method_contract", result)
         self.assertNotIn("skill_md", result)
 
+    def test_structured_passive_summary_is_not_promoted(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "structured_passive_summary_source.md")
+
+        self.assertEqual(result["outcome"], "learning_summary")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertEqual(result["source_kind"], "passive_summary")
+        self.assertNotIn("method_contract", result)
+        self.assertNotIn("skill_md", result)
+
     def test_script_required_source_preserves_resource_in_internal_contract(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "script_required_method_source.md")
 
         self.assertEqual(result["outcome"], "method_contract")
         self.assertIn("scripts/capture_docs.py", "\n".join(result["method_contract"]["resources"]))
         self.assertIn("python scripts/capture_docs.py", "\n".join(result["method_contract"]["source_evidence"]["commands"]))
+
+    def test_fenced_command_is_preserved_in_internal_contract_evidence(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "fenced_command_method_source.md")
+
+        self.assertEqual(result["outcome"], "method_contract")
+        self.assertIn("corepack pnpm@9.15.4 test", result["method_contract"]["source_evidence"]["commands"])
+        self.assertEqual(result["method_contract"]["resources"], ["none"])
 
     def test_explicit_model_invocation_is_preserved_in_the_contract(self) -> None:
         source = (FIXTURES / "complete_method_source.md").read_text(encoding="utf-8")
