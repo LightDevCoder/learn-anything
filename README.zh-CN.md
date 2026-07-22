@@ -18,8 +18,9 @@
 - 判断一个请求包含可复用的工作流知识，还是只需要按一次性任务处理。
 - 提炼触发条件、决策、命令、约束、失败模式和验证门槛。
 - 仅在资料证明方法完整时生成内部 Method Contract。
+- 只有从已验证的 Method Contract 出发，才构建或更新可安装 Skill 包，并对重复安装执行幂等处理。
 - 对叙述、一次性工作、被动摘要和稀疏资料，返回明确的“不晋升”学习摘要或带精确资料缺口的 `BLOCKED` 结果。
-- 提供确定性的 Python hooks，用于任务前分流、任务后反思和资料充分性评估。
+- 提供确定性的 Python hooks，用于任务前分流、任务后反思、资料充分性评估以及 Skill 打包/安装。
 
 ## 兼容的 Agent
 
@@ -121,6 +122,11 @@ python learn-anything/hooks/session_reflector.py tests/fixtures/transcript_with_
 # 评估资料充分性；输出内部 Method Contract 或不晋升结果。
 python learn-anything/hooks/skill_candidate_builder.py \
   --source-file tests/fixtures/complete_method_source.md
+
+# 只有上一步返回 outcome=method_contract 后才能打包。
+python learn-anything/hooks/package_builder.py \
+  --contract-file method-contract-result.json \
+  --output-root ./generated-skills
 ```
 
 ## 仓库结构
@@ -131,6 +137,7 @@ python learn-anything/hooks/skill_candidate_builder.py \
 | `learn-anything/hooks/learn_gate.py` | 任务前评分和模式选择 |
 | `learn-anything/hooks/session_reflector.py` | 任务后可复用学习检测 |
 | `learn-anything/hooks/skill_candidate_builder.py` | 资料充分性门与内部 Method Contract 构建器 |
+| `learn-anything/hooks/package_builder.py` | 确定性的 Contract→Package 构建与幂等安装边界 |
 | `learn-anything/hooks/config.example.json` | 机器可读的 hook 契约 |
 | `tests/fixtures/` | 模拟资料和转录稿 |
 | `tests/test_hooks.py` | 标准库测试套件 |

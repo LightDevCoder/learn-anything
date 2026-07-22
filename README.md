@@ -18,8 +18,9 @@ The core rule is simple: extract repeatable operating methods, not passive summa
 - Detects whether a request contains reusable workflow knowledge or is only a one-off task.
 - Extracts triggers, decisions, commands, constraints, failure modes, and verification gates.
 - Emits an internal Method Contract only when the source proves a complete reusable method.
+- Builds or updates an installable Skill package only from that validated contract, with idempotent duplicate handling.
 - Returns a not-promoted learning summary or a precise `BLOCKED` source-gap result for narration, one-off work, passive summaries, and sparse material.
-- Includes deterministic Python hooks for pre-task gating, post-task reflection, and source-sufficiency assessment.
+- Includes deterministic Python hooks for pre-task gating, post-task reflection, source-sufficiency assessment, and package build/install.
 
 ## Compatible Agents
 
@@ -122,6 +123,11 @@ python learn-anything/hooks/session_reflector.py tests/fixtures/transcript_with_
 # Assess source sufficiency; emit an internal Method Contract or a not-promoted result.
 python learn-anything/hooks/skill_candidate_builder.py \
   --source-file tests/fixtures/complete_method_source.md
+
+# Build a package only after the command above returns outcome=method_contract.
+python learn-anything/hooks/package_builder.py \
+  --contract-file method-contract-result.json \
+  --output-root ./generated-skills
 ```
 
 ## Repository Layout
@@ -132,6 +138,7 @@ python learn-anything/hooks/skill_candidate_builder.py \
 | `learn-anything/hooks/learn_gate.py` | Pre-task scoring and mode selection |
 | `learn-anything/hooks/session_reflector.py` | Post-task reusable-learning detection |
 | `learn-anything/hooks/skill_candidate_builder.py` | Source-sufficiency gate and internal Method Contract builder |
+| `learn-anything/hooks/package_builder.py` | Deterministic contract-to-package build and idempotent install boundary |
 | `learn-anything/hooks/config.example.json` | Machine-readable hook contract |
 | `tests/fixtures/` | Simulated source material and transcripts |
 | `tests/test_hooks.py` | Standard-library test suite |

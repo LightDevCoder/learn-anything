@@ -5,6 +5,10 @@ description: Turn conversations, transcripts, project notes, folder workflows, d
 
 # Learn Anything
 
+This is a **user-invoked** Skill. Creating or updating a durable package needs
+the user's intentional selection; do not invoke another user-invoked Skill on
+the user's behalf.
+
 ## Purpose
 
 Use this skill to learn whether arbitrary source material contains a compact, reusable agent method. Extract repeatable operating methods, not passive summaries of what happened.
@@ -56,6 +60,63 @@ If source material is sparse, return `BLOCKED` with the exact missing method fie
 ## Package Build Prerequisite
 
 Do not enter package build from raw source. A complete internal Method Contract is the prerequisite. The source-sufficiency gate itself outputs no `SKILL.md`.
+
+## Package Build
+
+After the gate returns `outcome: method_contract`, run the integrated package
+builder with that JSON result. The builder is deterministic and keeps the
+Method Contract internal:
+
+```text
+python learn-anything/hooks/package_builder.py \
+  --contract-file <method-contract-result.json> \
+  --output-root <skill-collection-root> \
+  [--resource-root <source-resource-root>]
+```
+
+The builder derives a kebab-case name from the contract title unless `--name`
+is supplied. It renders a direct-instruction `SKILL.md` with the source-backed
+purpose, trigger branches, invocation type, inputs, ordered method, decisions,
+constraints, failure modes, outputs, resources, preserved evidence, and
+verification. Each ordered step has a checkable completion criterion. It does
+not import, copy, or require `writing-great-skills` at runtime.
+
+Treat builder results as explicit state:
+
+- `created` means a new package was written.
+- `updated` requires `--update` and changes only the generated package
+  instructions while preserving unrelated files.
+- `no-op` means the same contract already produced the package; preserve it.
+- `duplicate` means an unowned package or different installation already
+  exists; stop and obtain explicit authority before updating it.
+- `blocked` means the contract is incomplete, unresolved, contradictory, or
+  outside the package boundary. Return the precise reason and do not write.
+
+Install only from a generated package into a clean host directory. Use the
+builder's `install_package()` boundary (or copy the complete package directory
+with the host's documented installer), then verify that `SKILL.md`, declared
+metadata, and every justified resource are present. A second identical install
+must be a no-op; a different existing package is a duplicate unless the user
+explicitly authorizes an update.
+
+## Internal Authoring Rules
+
+Apply these rules while rendering the package; they are internal guidance, not
+a runtime dependency on another Skill:
+
+- Put the smallest ordered method needed for every trigger branch in `SKILL.md`;
+  disclose branch-specific reference material only when that branch needs it.
+- State what the package does and when to use it in the description. Keep one
+  source of truth for each decision and remove duplicated or no-op prose.
+- Preserve exact commands, paths, corrections, and failure conditions from the
+  accepted source. Never fill a missing field with a generic heading or default.
+- Include a resource only when the contract names and justifies it. Do not
+  create empty directories, placeholder files, or an unverified script copy.
+  Relative resources are copied only from an explicitly supplied
+  `--resource-root` after existence and containment checks; absolute paths stay
+  documented as external prerequisites.
+- Keep the declared invocation boundary explicit. Recommend another
+  user-invoked Skill and stop instead of silently running it.
 
 ## Generated Skill Shape
 
