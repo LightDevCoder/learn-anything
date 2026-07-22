@@ -17,8 +17,9 @@ The core rule is simple: extract repeatable operating methods, not passive summa
 
 - Detects whether a request contains reusable workflow knowledge or is only a one-off task.
 - Extracts triggers, decisions, commands, constraints, failure modes, and verification gates.
-- Produces compact `SKILL.md` guidance that can be adapted by different agent hosts.
-- Includes deterministic Python hooks for pre-task gating, post-task reflection, and candidate generation.
+- Emits an internal Method Contract only when the source proves a complete reusable method.
+- Returns a not-promoted learning summary or a precise `BLOCKED` source-gap result for narration, one-off work, passive summaries, and sparse material.
+- Includes deterministic Python hooks for pre-task gating, post-task reflection, and source-sufficiency assessment.
 
 ## Compatible Agents
 
@@ -82,29 +83,29 @@ Example request:
 ```text
 Turn these source notes into a reusable agent skill. Extract the trigger,
 repeatable workflow, constraints, failure modes, output format, and quality
-checks. Do not invent missing details, and validate the resulting SKILL.md.
+checks. Do not invent missing details; first return a Method Contract or the
+precise source gaps before any package is built.
 ```
 
-### 3. Review the generated skill
+### 3. Review the source-sufficiency result
 
-The expected output is a compact skill folder containing:
+The source-to-result hook has three outcomes:
 
-- YAML frontmatter with only `name` and `description`.
-- A description that states what the skill does and when to use it.
-- Direct workflow instructions with concrete inputs and outputs.
-- Constraints and known failure modes.
-- Actionable quality checks before delivery.
+- `method_contract`: an **internal** structured contract with purpose, triggers, invocation type, inputs, ordered method, decisions, constraints, failure modes, outputs, resources, verification, confidence, and unresolved gaps.
+- `learning_summary`: a preserved but explicitly not-promoted result for one-off narration or passive summaries.
+- `blocked`: an explicitly not-promoted result that names each missing source field required to learn a reusable method.
+
+The hook never creates a production-ready `SKILL.md` from generic defaults. Package generation remains a later internal layer and may begin only from a complete Method Contract.
 
 ## Workflow
 
 ```mermaid
 flowchart LR
     A["Conversations, notes, docs, project files"] --> B{"Reusable method?"}
-    B -->|"No"| C["Handle as a normal one-off task"]
-    B -->|"Yes"| D["Extract triggers, decisions, constraints, failure modes"]
-    D --> E["Draft a compact SKILL.md"]
-    E --> F["Validate frontmatter and quality checks"]
-    F --> G["Install or share with an agent host"]
+    B -->|"One-off or passive"| C["Not-promoted learning summary"]
+    B -->|"Sparse or incomplete"| D["BLOCKED with precise source gaps"]
+    B -->|"Complete method"| E["Internal Method Contract"]
+    E --> F["Later internal package-build layer"]
 ```
 
 ## Optional Hooks
@@ -118,9 +119,9 @@ python learn-anything/hooks/learn_gate.py "Create a reusable skill from this wor
 # Inspect a completed transcript for reusable learning.
 python learn-anything/hooks/session_reflector.py tests/fixtures/transcript_with_corrections.txt
 
-# Build a deterministic Skill Creator compatible candidate.
+# Assess source sufficiency; emit an internal Method Contract or a not-promoted result.
 python learn-anything/hooks/skill_candidate_builder.py \
-  --source-file tests/fixtures/sample_source.md
+  --source-file tests/fixtures/complete_method_source.md
 ```
 
 ## Repository Layout
@@ -130,7 +131,7 @@ python learn-anything/hooks/skill_candidate_builder.py \
 | `learn-anything/SKILL.md` | Installable agent instructions |
 | `learn-anything/hooks/learn_gate.py` | Pre-task scoring and mode selection |
 | `learn-anything/hooks/session_reflector.py` | Post-task reusable-learning detection |
-| `learn-anything/hooks/skill_candidate_builder.py` | Source-to-skill candidate builder |
+| `learn-anything/hooks/skill_candidate_builder.py` | Source-sufficiency gate and internal Method Contract builder |
 | `learn-anything/hooks/config.example.json` | Machine-readable hook contract |
 | `tests/fixtures/` | Simulated source material and transcripts |
 | `tests/test_hooks.py` | Standard-library test suite |

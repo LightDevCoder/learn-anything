@@ -17,8 +17,9 @@
 
 - 判断一个请求包含可复用的工作流知识，还是只需要按一次性任务处理。
 - 提炼触发条件、决策、命令、约束、失败模式和验证门槛。
-- 生成紧凑的 `SKILL.md`，可以适配不同的 agent 宿主。
-- 提供确定性的 Python hooks，用于任务前分流、任务后反思和候选 skill 生成。
+- 仅在资料证明方法完整时生成内部 Method Contract。
+- 对叙述、一次性工作、被动摘要和稀疏资料，返回明确的“不晋升”学习摘要或带精确资料缺口的 `BLOCKED` 结果。
+- 提供确定性的 Python hooks，用于任务前分流、任务后反思和资料充分性评估。
 
 ## 兼容的 Agent
 
@@ -81,30 +82,29 @@ cp -R ./learn-anything "$HOME/.codex/skills/learn-anything"
 
 ```text
 把这些资料提炼成一个可复用的 agent skill。提取触发条件、可重复工作流、
-约束、失败模式、输出格式和质量检查。不要补造缺失细节，并验证最终的
-SKILL.md。
+约束、失败模式、输出格式和质量检查。不要补造缺失细节；先返回
+Method Contract 或精确的资料缺口，只有资料完整时才进入后续打包。
 ```
 
-### 3. 检查生成结果
+### 3. 检查资料充分性结果
 
-预期输出是一个紧凑的 skill 目录，至少包含：
+资料到结果的 hook 有三种输出：
 
-- 只含 `name` 和 `description` 的 YAML frontmatter。
-- 同时说明 skill 做什么、什么时候使用的 description。
-- 明确的输入、输出和可重复执行的工作流指令。
-- 约束条件和已知失败模式。
-- 交付前可执行的质量检查。
+- `method_contract`：**内部**结构化契约，包含目的、触发条件、调用类型、输入、有序方法、决策、约束、失败模式、输出、资源、验证、置信度和未解决缺口。
+- `learning_summary`：保留资料，但明确不晋升为 skill；适用于一次性叙述或被动摘要。
+- `blocked`：明确不晋升为 skill，并逐项列出学习可复用方法所缺的资料。
+
+该 hook 绝不会靠通用默认内容生成可用于生产的 `SKILL.md`。打包生成属于后续内部层，只能从完整的 Method Contract 开始。
 
 ## 工作流
 
 ```mermaid
 flowchart LR
     A["对话、笔记、文档、项目文件"] --> B{"是否存在可复用方法？"}
-    B -->|"否"| C["按普通一次性任务处理"]
-    B -->|"是"| D["提炼触发条件、决策、约束和失败模式"]
-    D --> E["生成紧凑的 SKILL.md"]
-    E --> F["验证 frontmatter 和质量检查"]
-    F --> G["安装或分享给 Agent 宿主"]
+    B -->|"一次性或被动资料"| C["不晋升的学习摘要"]
+    B -->|"稀疏或不完整"| D["带精确资料缺口的 BLOCKED"]
+    B -->|"完整方法"| E["内部 Method Contract"]
+    E --> F["后续内部打包层"]
 ```
 
 ## 可选 Hooks
@@ -118,9 +118,9 @@ python learn-anything/hooks/learn_gate.py "Create a reusable skill from this wor
 # 检查已完成的转录稿中是否存在可复用学习内容。
 python learn-anything/hooks/session_reflector.py tests/fixtures/transcript_with_corrections.txt
 
-# 从资料生成确定性的 Skill Creator 兼容候选结果。
+# 评估资料充分性；输出内部 Method Contract 或不晋升结果。
 python learn-anything/hooks/skill_candidate_builder.py \
-  --source-file tests/fixtures/sample_source.md
+  --source-file tests/fixtures/complete_method_source.md
 ```
 
 ## 仓库结构
@@ -130,7 +130,7 @@ python learn-anything/hooks/skill_candidate_builder.py \
 | `learn-anything/SKILL.md` | 可安装的 agent 指令 |
 | `learn-anything/hooks/learn_gate.py` | 任务前评分和模式选择 |
 | `learn-anything/hooks/session_reflector.py` | 任务后可复用学习检测 |
-| `learn-anything/hooks/skill_candidate_builder.py` | 从资料生成 skill 候选 |
+| `learn-anything/hooks/skill_candidate_builder.py` | 资料充分性门与内部 Method Contract 构建器 |
 | `learn-anything/hooks/config.example.json` | 机器可读的 hook 契约 |
 | `tests/fixtures/` | 模拟资料和转录稿 |
 | `tests/test_hooks.py` | 标准库测试套件 |

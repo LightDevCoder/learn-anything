@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
-import re
+import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -75,21 +76,105 @@ class SessionReflectorTests(unittest.TestCase):
 
 
 class SkillCandidateBuilderTests(unittest.TestCase):
-    def test_end_to_end_source_to_skill_candidate(self) -> None:
-        source = (FIXTURES / "sample_source.md").read_text(encoding="utf-8")
-        result = skill_candidate_builder.build_candidate({"source": source})
+    def _run_builder(self, source: str | None = None, source_file: Path | None = None) -> dict[str, object]:
+        command = [sys.executable, str(HOOKS / "skill_candidate_builder.py")]
+        if source_file:
+            command.extend(["--source-file", str(source_file)])
+        completed = subprocess.run(
+            command,
+            input=source,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return json.loads(completed.stdout)
 
-        self.assertEqual(result["name"], "browser-docs-capture-workflow")
-        self.assertRegex(result["name"], r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-        self.assertIn("website", result["trigger_description"])
-        self.assertGreaterEqual(len(result["workflow"]), 4)
-        self.assertGreaterEqual(len(result["constraints"]), 2)
-        self.assertGreaterEqual(len(result["quality_checks"]), 2)
-        self.assertIn("## Workflow", result["skill_md"])
-        self.assertIn("## Constraints", result["skill_md"])
-        self.assertIn("## Quality Checks", result["skill_md"])
-        draft_marker_pattern = "TO" + "DO|place" + "holder"
-        self.assertIsNone(re.search(draft_marker_pattern, result["skill_md"], flags=re.IGNORECASE))
+    def test_complete_authoritative_method_returns_internal_contract_and_preserves_evidence(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "complete_method_source.md")
+
+        self.assertEqual(result["outcome"], "method_contract")
+        self.assertEqual(result["promotion_status"], "eligible_for_package_build")
+        self.assertNotIn("skill_md", result)
+
+        contract = result["method_contract"]
+        self.assertTrue(
+            {
+                "purpose",
+                "triggers",
+                "invocation_type",
+                "inputs",
+                "ordered_method",
+                "decisions",
+                "constraints",
+                "failure_modes",
+                "outputs",
+                "resources",
+                "verification",
+                "unresolved_gaps",
+                "confidence",
+            }.issubset(contract)
+        )
+        self.assertEqual(contract["invocation_type"], "user-invoked")
+        self.assertGreaterEqual(len(contract["ordered_method"]), 4)
+        self.assertGreaterEqual(len(contract["decisions"]), 1)
+        self.assertGreaterEqual(len(contract["failure_modes"]), 1)
+        self.assertEqual(contract["unresolved_gaps"], [])
+        self.assertIn("corepack pnpm@9.15.4 test", "\n".join(contract["source_evidence"]["commands"]))
+        self.assertIn("C:\\repo\\Learning", "\n".join(contract["source_evidence"]["paths"]))
+        self.assertIn("docs capture command", "\n".join(contract["source_evidence"]["corrections"]).lower())
+        self.assertIn("third-party summary replaces", "\n".join(contract["source_evidence"]["failure_modes"]))
+        self.assertGreaterEqual(contract["confidence"], 0.8)
+
+    def test_one_off_narration_returns_not_promoted_learning_summary(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "one_off_incident.md")
+
+        self.assertEqual(result["outcome"], "learning_summary")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertNotIn("skill_md", result)
+        self.assertIn("one-off", result["reason"].lower())
+        self.assertIn("corepack pnpm@9.15.4 test", result["learning_summary"]["preserved_details"]["commands"])
+
+    def test_passive_summary_is_not_promoted_to_a_skill(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "passive_summary.md")
+
+        self.assertEqual(result["outcome"], "learning_summary")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertNotIn("skill_md", result)
+        self.assertIn("passive", result["reason"].lower())
+
+    def test_sparse_source_is_blocked_with_precise_gaps_and_no_generic_skill(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "sparse_source.md")
+
+        self.assertEqual(result["outcome"], "blocked")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertNotIn("skill_md", result)
+        self.assertEqual(
+            result["missing_information"],
+            [
+                "purpose",
+                "triggers",
+                "invocation_type",
+                "inputs",
+                "ordered_method",
+                "decisions",
+                "constraints",
+                "failure_modes",
+                "outputs",
+                "verification",
+            ],
+        )
+        self.assertIn("invocation_type", result["required_source_gaps"])
+
+    def test_explicit_model_invocation_is_preserved_in_the_contract(self) -> None:
+        source = (FIXTURES / "complete_method_source.md").read_text(encoding="utf-8")
+        result = self._run_builder(source.replace("Invocation Type: user-invoked", "Invocation Type: model-invoked"))
+
+        self.assertEqual(result["outcome"], "method_contract")
+        self.assertEqual(result["method_contract"]["invocation_type"], "model-invoked")
 
 
 if __name__ == "__main__":

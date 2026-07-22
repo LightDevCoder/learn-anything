@@ -9,14 +9,27 @@
     "candidate_threshold": 8
   },
   "skill_candidate_builder": {
-    "required_sections": [
+    "outcomes": [
+      "method_contract",
+      "learning_summary",
+      "blocked"
+    ],
+    "method_contract_required_fields": [
       "purpose",
-      "trigger",
+      "triggers",
+      "invocation_type",
       "inputs",
-      "workflow",
+      "ordered_method",
+      "decisions",
       "constraints",
-      "output_format",
-      "quality_checks"
-    ]
+      "failure_modes",
+      "outputs",
+      "resources",
+      "verification",
+      "unresolved_gaps",
+      "confidence"
+    ],
+    "generic_defaults_are_not_permitted": true,
+    "produces_installable_skill": false
   }
 }
