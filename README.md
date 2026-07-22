@@ -122,7 +122,8 @@ python learn-anything/hooks/session_reflector.py tests/fixtures/transcript_with_
 
 # Assess source sufficiency; emit an internal Method Contract or a not-promoted result.
 python learn-anything/hooks/skill_candidate_builder.py \
-  --source-file tests/fixtures/complete_method_source.md
+  --source-file tests/fixtures/complete_method_source.md \
+  > method-contract-result.json
 
 # Build a package only after the command above returns outcome=method_contract.
 python learn-anything/hooks/package_builder.py \

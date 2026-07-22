@@ -68,6 +68,11 @@ class PackageBuilderTests(unittest.TestCase):
         self.assertEqual(normalized["constraints"][0], payload["method_contract"]["constraints"][0])
         self.assertEqual(normalized["failure_modes"][0], payload["method_contract"]["failure_modes"][0])
 
+        for field, text in (("constraints", "Fail if TODO markers remain."), ("failure_modes", "Block if TBD markers remain.")):
+            guardrail = json.loads(json.dumps(complete_payload()))
+            guardrail["method_contract"][field] = [text]
+            package_builder.validate_contract(guardrail)
+
         blocked = json.loads(json.dumps(complete_payload()))
         blocked["method_contract"]["constraints"] = ["TBD"]
         blocked["method_contract"]["failure_modes"] = ["TODO"]
@@ -180,6 +185,20 @@ class PackageBuilderTests(unittest.TestCase):
             self.assertEqual((destination / "user-owned.txt").read_text(encoding="utf-8"), "keep\n")
             self.assertEqual(package_builder.install_package(second_package, install_root)["outcome"], "no-op")
 
+    def test_install_rejects_deleted_manifest_resource(self) -> None:
+        payload = json.loads(json.dumps(complete_payload()))
+        payload["method_contract"]["resources"] = ["scripts/capture_docs.py"]
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary) / "resources"
+            (resource_root / "scripts").mkdir(parents=True)
+            (resource_root / "scripts" / "capture_docs.py").write_text("print('capture')\n", encoding="utf-8")
+            package = Path(
+                package_builder.build_package(payload, Path(temporary) / "built", resource_root=resource_root)["package"]
+            )
+            (package / "scripts" / "capture_docs.py").unlink()
+            with self.assertRaisesRegex(package_builder.PackageBuildError, "missing"):
+                package_builder.install_package(package, Path(temporary) / "installed")
+
     def test_declared_resources_are_referenced_without_fabricating_files(self) -> None:
         payload = json.loads(json.dumps(complete_payload()))
         payload["method_contract"]["resources"] = ["scripts/capture_docs.py"]
@@ -200,6 +219,17 @@ class PackageBuilderTests(unittest.TestCase):
             with self.assertRaisesRegex(package_builder.PackageBuildError, "resource"):
                 package_builder.build_package(payload, temporary, resource_root=Path(temporary) / "resources")
             self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_relative_resource_cannot_escape_package_destination(self) -> None:
+        payload = json.loads(json.dumps(complete_payload()))
+        payload["method_contract"]["resources"] = ["../resources/foo.py"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "resource-root"
+            root.mkdir()
+            (Path(temporary) / "resources").mkdir()
+            (Path(temporary) / "resources" / "foo.py").write_text("print('outside')\n", encoding="utf-8")
+            with self.assertRaisesRegex(package_builder.PackageBuildError, "resource"):
+                package_builder.build_package(payload, Path(temporary) / "built", resource_root=root)
 
 
 if __name__ == "__main__":

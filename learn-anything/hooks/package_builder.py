@@ -66,7 +66,9 @@ STANDALONE_PLACEHOLDERS = frozenset(
     }
 )
 GUARDRAIL_RE = re.compile(
-    r"\b(?:do not|don't|never|avoid|must not|must never)\b|不要|禁止|不得|避免",
+    r"\b(?:do not|don't|never|avoid|must not|must never|fails? if|blocks? if|"
+    r"is blocked when|stop (?:if|when)|rejects? if|errors? if|raises? if|"
+    r"refuses? if|returns? .*? if)\b|不要|禁止|不得|避免",
     re.IGNORECASE,
 )
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -249,12 +251,14 @@ def _resource_plan(
         source = (root / Path(relative_name)).resolve()
         if root not in source.parents or not source.is_file():
             raise PackageBuildError(f"declared resource is missing or outside resource root: {relative_name}")
-        target = package_dir / Path(relative_name)
+        target = (package_dir / Path(relative_name)).resolve()
+        if package_dir.resolve() not in target.parents:
+            raise PackageBuildError(f"declared resource escapes package destination: {relative_name}")
         plan.append((source, target))
     return plan
 
 
-def _managed_names(package_dir: Path) -> list[str]:
+def _managed_names(package_dir: Path, *, require_files: bool = False) -> list[str]:
     manifest = package_dir / MANAGED_MANIFEST
     if not manifest.is_file():
         return []
@@ -265,7 +269,18 @@ def _managed_names(package_dir: Path) -> list[str]:
     values = data.get("managed_resources") if isinstance(data, dict) else None
     if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
         raise PackageBuildError(f"managed-resource manifest is invalid: {manifest}")
-    return sorted(set(values))
+    root = package_dir.resolve()
+    normalized: list[str] = []
+    for value in values:
+        if not value or Path(value).is_absolute() or WINDOWS_ABSOLUTE_RE.match(value):
+            raise PackageBuildError(f"managed-resource manifest contains an unsafe path: {value!r}")
+        target = (root / Path(value)).resolve()
+        if root not in target.parents:
+            raise PackageBuildError(f"managed-resource manifest escapes package: {value!r}")
+        if require_files and not target.is_file():
+            raise PackageBuildError(f"managed resource is missing: {value}")
+        normalized.append(target.relative_to(root).as_posix())
+    return sorted(set(normalized))
 
 
 def _write_managed_manifest(package_dir: Path, names: list[str]) -> None:
@@ -506,6 +521,11 @@ def install_package(
     source = Path(package_dir).resolve()
     if not source.is_dir() or not (source / "SKILL.md").is_file():
         raise PackageBuildError("install source must contain a SKILL.md")
+    if _marker(source / "SKILL.md") is None:
+        raise PackageBuildError("install source is not a generated learn-anything package")
+    if not (source / MANAGED_MANIFEST).is_file():
+        raise PackageBuildError("install source is missing its managed-resource manifest")
+    _managed_names(source, require_files=True)
     name = _read_frontmatter_name(source / "SKILL.md")
     if not NAME_RE.fullmatch(name):
         raise PackageBuildError("installed package name must be kebab-case")

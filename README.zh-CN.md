@@ -121,7 +121,8 @@ python learn-anything/hooks/session_reflector.py tests/fixtures/transcript_with_
 
 # 评估资料充分性；输出内部 Method Contract 或不晋升结果。
 python learn-anything/hooks/skill_candidate_builder.py \
-  --source-file tests/fixtures/complete_method_source.md
+  --source-file tests/fixtures/complete_method_source.md \
+  > method-contract-result.json
 
 # 只有上一步返回 outcome=method_contract 后才能打包。
 python learn-anything/hooks/package_builder.py \
