@@ -41,11 +41,11 @@ Gather only the source needed to infer a repeatable method:
 - Commands, paths, file names, APIs, schemas, and exact error strings that future agents must recognize
 - Existing skills or project rules that the new skill must align with
 
-If source material is sparse, return `BLOCKED` with the exact missing method fields. If it is narration, a one-off task, or a passive summary, return a learning summary explicitly marked `not_promoted`. Do not draft a package until source evidence is sufficient.
+If source material is sparse, return `BLOCKED` with the exact missing method fields. Treat `TBD`, `TODO`, `N/A`, `unknown`, empty placeholders, and generic template boilerplate as missing evidence even when headings are present. If it is narration, a one-off task, or a passive summary, return a learning summary explicitly marked `not_promoted`. Do not draft a package until source evidence is sufficient.
 
 ## Decision Workflow
 
-1. Identify whether the source is a reusable workflow, narration, a passive summary, a one-off task, or too sparse to assess.
+1. Identify whether the source is a reusable workflow, narration, a passive summary, a one-off task, or too sparse to assess. Base a narration classification on affirmative title or leading-context evidence; do not demote a complete method because a later field says `not a one-off` or records a `no procedure` failure mode.
 2. Separate durable procedure from incidental task details. Keep what changes future behavior; preserve exact operational details from authoritative material.
 3. Extract purpose, trigger branches, explicit invocation type, inputs, an ordered method, decisions, constraints, failure modes, outputs, resources, and verification.
 4. Convert corrections and failure modes into source-backed constraints, guardrails, or verification checks without paraphrasing away commands, paths, decisions, or errors.

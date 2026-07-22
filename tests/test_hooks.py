@@ -169,6 +169,50 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         )
         self.assertIn("invocation_type", result["required_source_gaps"])
 
+    def test_placeholder_and_generic_boilerplate_values_block_promotion(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "placeholder_method_source.md")
+
+        self.assertEqual(result["outcome"], "blocked")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertNotIn("skill_md", result)
+        self.assertEqual(
+            result["missing_information"],
+            [
+                "purpose",
+                "triggers",
+                "invocation_type",
+                "inputs",
+                "ordered_method",
+                "decisions",
+                "constraints",
+                "failure_modes",
+                "outputs",
+                "verification",
+            ],
+        )
+        self.assertIn("TBD", result["placeholder_source_values"]["purpose"])
+        self.assertIn("Describe the decision rules here.", result["placeholder_source_values"]["decisions"])
+
+    def test_complete_method_with_negated_one_off_language_is_not_demoted(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "complete_method_with_safe_narration.md")
+
+        self.assertEqual(result["outcome"], "method_contract")
+        self.assertEqual(result["source_kind"], "reusable_method")
+
+    def test_complete_method_with_no_procedure_failure_mode_is_not_demoted(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "complete_method_with_safe_narration.md")
+
+        self.assertEqual(result["outcome"], "method_contract")
+        self.assertIn("no procedure", "\n".join(result["method_contract"]["failure_modes"]).lower())
+
+    def test_script_required_source_preserves_resource_in_internal_contract(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "script_required_method_source.md")
+
+        self.assertEqual(result["outcome"], "method_contract")
+        self.assertIn("scripts/capture_docs.py", "\n".join(result["method_contract"]["resources"]))
+        self.assertIn("python scripts/capture_docs.py", "\n".join(result["method_contract"]["source_evidence"]["commands"]))
+
     def test_explicit_model_invocation_is_preserved_in_the_contract(self) -> None:
         source = (FIXTURES / "complete_method_source.md").read_text(encoding="utf-8")
         result = self._run_builder(source.replace("Invocation Type: user-invoked", "Invocation Type: model-invoked"))

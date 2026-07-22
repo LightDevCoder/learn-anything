@@ -67,6 +67,11 @@ ONE_OFF_PATTERNS = (
     r"\bjust this release\b",
 )
 
+NEGATED_ONE_OFF_PATTERNS = (
+    r"\b(?:not|never|is not|isn't|isnt)\s+(?:a\s+)?one[- ]off\b",
+    r"\bnot\s+unique to\b",
+)
+
 PASSIVE_SUMMARY_PATTERNS = (
     r"\bpassive summary\b",
     r"\bweekly .*summary\b",
@@ -74,6 +79,62 @@ PASSIVE_SUMMARY_PATTERNS = (
     r"\bno .*future task\b",
     r"\bno .*agreed\b",
     r"\bteam read\b",
+)
+
+NEGATED_PASSIVE_SUMMARY_PATTERNS = (
+    r"\b(?:not|never|is not|isn't|isnt)\s+(?:a\s+)?passive summary\b",
+)
+
+PLACEHOLDER_MARKERS = frozenset(
+    {
+        "",
+        "-",
+        "...",
+        "…",
+        "[]",
+        "[ ]",
+        "<placeholder>",
+        "[placeholder]",
+        "placeholder",
+        "tbd",
+        "todo",
+        "n/a",
+        "na",
+        "unknown",
+        "none",
+        "not applicable",
+        "not available",
+        "to be determined",
+        "to be completed",
+        "coming soon",
+    }
+)
+
+GENERIC_BOILERPLATE_PATTERNS = (
+    r"^(?:add|describe|document|insert|provide)\s+(?:the\s+)?(?:purpose|triggers?|inputs?|ordered method|workflow|steps?|decisions?|decision rules|constraints?|failure modes?|outputs?|verification|details)(?:\s+here)?$",
+    r"^(?:standard|generic)\s+(?:constraints?|workflow|quality checks?|verification)(?:\s+apply)?$",
+    r"^use when an ai agent needs to repeat the .+ method from source notes, transcripts, project files, or user corrections$",
+    r"^use this skill to apply a repeatable operating method extracted from source material$",
+    r"^return the generated or updated skill files plus a concise verification summary$",
+)
+
+GENERIC_BOILERPLATE_VALUES = frozenset(
+    {
+        "identify the source artifacts and the user's requested reusable outcome",
+        "extract repeatable decisions, commands, constraints, and verification gates",
+        "separate durable operating method from one-off project narration",
+        "draft a compact skill creator compatible skill.md with concrete trigger metadata",
+        "validate the draft against frontmatter, trigger, workflow, constraints, output format, and quality checks",
+        "extract repeatable operating methods, not passive summaries",
+        "preserve exact commands, paths, apis, filenames, and error strings when they change future behavior",
+        "do not invent missing workflow details from sparse source material",
+        "keep generated skill names kebab-case and under 64 characters",
+        "frontmatter contains only name and description",
+        "description states both what the skill does and when to use it",
+        "workflow steps are imperative and repeatable",
+        "constraints include relevant corrections or failure modes from the source",
+        "no unresolved draft markers remain",
+    }
 )
 
 COMMAND_PATTERN = re.compile(
@@ -220,6 +281,33 @@ def _unique(values: list[str]) -> list[str]:
     return result
 
 
+def _placeholder_normalized(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value).strip().strip("` ").rstrip(".!?").strip()
+    return normalized.lower()
+
+
+def _is_placeholder(value: str) -> bool:
+    normalized = _placeholder_normalized(value)
+    if normalized in PLACEHOLDER_MARKERS:
+        return True
+    bracketless_marker = normalized.strip("[]<>{}() ")
+    if bracketless_marker in PLACEHOLDER_MARKERS:
+        return True
+    if normalized in GENERIC_BOILERPLATE_VALUES:
+        return True
+    return any(re.fullmatch(pattern, normalized, flags=re.IGNORECASE) for pattern in GENERIC_BOILERPLATE_PATTERNS)
+
+
+def _placeholder_values(values: Any) -> list[str]:
+    if isinstance(values, str):
+        candidates = [values]
+    elif isinstance(values, list):
+        candidates = [value for value in values if isinstance(value, str)]
+    else:
+        candidates = []
+    return [value for value in candidates if _is_placeholder(value)]
+
+
 def _preserved_details(source: str, sections: dict[str, list[str]]) -> dict[str, list[str]]:
     code_spans = re.findall(r"`([^`\r\n]+)`", source)
     commands = [span for span in code_spans if COMMAND_PATTERN.search(span)]
@@ -243,21 +331,54 @@ def _preserved_details(source: str, sections: dict[str, list[str]]) -> dict[str,
     }
 
 
+def _classification_context(source: str) -> str:
+    """Return the title and leading narrative, excluding structured method fields."""
+
+    context_lines: list[str] = []
+    for line in source.splitlines():
+        if _match_section_heading(line):
+            break
+        context_lines.append(line)
+    return "\n".join(context_lines)
+
+
+def _has_affirmative_context_signal(
+    context: str,
+    patterns: tuple[str, ...],
+    negated_patterns: tuple[str, ...],
+) -> bool:
+    for line in context.splitlines():
+        if not re.search("|".join(patterns), line, flags=re.IGNORECASE):
+            continue
+        if re.search("|".join(negated_patterns), line, flags=re.IGNORECASE):
+            continue
+        return True
+    return False
+
+
 def _source_kind(source: str, sections: dict[str, list[str]]) -> str:
-    if re.search("|".join(ONE_OFF_PATTERNS), source, flags=re.IGNORECASE):
+    context = _classification_context(source)
+    if _has_affirmative_context_signal(context, ONE_OFF_PATTERNS, NEGATED_ONE_OFF_PATTERNS):
         return "one_off_narration"
-    if re.search("|".join(PASSIVE_SUMMARY_PATTERNS), source, flags=re.IGNORECASE):
+    if _has_affirmative_context_signal(
+        context,
+        PASSIVE_SUMMARY_PATTERNS,
+        NEGATED_PASSIVE_SUMMARY_PATTERNS,
+    ):
         return "passive_summary"
     if not any(_values(lines) for lines in sections.values()):
         return "insufficient_source"
     return "method_candidate"
 
 
-def _missing_information(fields: dict[str, Any]) -> list[str]:
+def _missing_information(fields: dict[str, Any], raw_values: dict[str, list[str]] | None = None) -> list[str]:
     missing: list[str] = []
     for field in REQUIRED_METHOD_FIELDS:
         value = fields[field]
-        if field == "ordered_method":
+        source_values = raw_values[field] if raw_values is not None else value
+        if _placeholder_values(source_values):
+            present = False
+        elif field == "ordered_method":
             present = isinstance(value, list) and len(value) >= 2
         else:
             present = bool(value)
@@ -314,10 +435,10 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
 
     source = _combined_source(data)
     sections = _parse_sections(source)
-    fields: dict[str, Any] = {
-        "purpose": " ".join(_values(sections["purpose"])),
+    raw_values: dict[str, list[str]] = {
+        "purpose": _values(sections["purpose"]),
         "triggers": _values(sections["triggers"]),
-        "invocation_type": _normalize_invocation(_values(sections["invocation_type"])),
+        "invocation_type": _values(sections["invocation_type"]),
         "inputs": _values(sections["inputs"]),
         "ordered_method": _ordered_values(sections["ordered_method"]),
         "decisions": _values(sections["decisions"]),
@@ -326,6 +447,19 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
         "outputs": _values(sections["outputs"]),
         "resources": _values(sections["resources"]),
         "verification": _values(sections["verification"]),
+    }
+    fields: dict[str, Any] = {
+        "purpose": " ".join(raw_values["purpose"]),
+        "triggers": raw_values["triggers"],
+        "invocation_type": _normalize_invocation(raw_values["invocation_type"]),
+        "inputs": raw_values["inputs"],
+        "ordered_method": raw_values["ordered_method"],
+        "decisions": raw_values["decisions"],
+        "constraints": raw_values["constraints"],
+        "failure_modes": raw_values["failure_modes"],
+        "outputs": raw_values["outputs"],
+        "resources": raw_values["resources"],
+        "verification": raw_values["verification"],
     }
     evidence = _preserved_details(source, sections)
     source_kind = _source_kind(source, sections)
@@ -338,8 +472,13 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
             evidence=evidence,
         )
 
-    missing_information = _missing_information(fields)
+    missing_information = _missing_information(fields, raw_values)
     if missing_information:
+        placeholder_source_values = {
+            field: _placeholder_values(raw_values[field])
+            for field in missing_information
+            if _placeholder_values(raw_values[field])
+        }
         return {
             "outcome": "blocked",
             "promotion_status": "not_promoted",
@@ -347,6 +486,7 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
             "reason": "A reusable method cannot be learned without the named source evidence.",
             "missing_information": missing_information,
             "required_source_gaps": {field: SOURCE_GAP_GUIDANCE[field] for field in missing_information},
+            "placeholder_source_values": placeholder_source_values,
             "learning_summary": _learning_summary(source, evidence),
         }
 
