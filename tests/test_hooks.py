@@ -206,6 +206,15 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "method_contract")
         self.assertIn("no procedure", "\n".join(result["method_contract"]["failure_modes"]).lower())
 
+    def test_structured_affirmative_one_off_method_is_not_promoted(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "structured_one_off_method_source.md")
+
+        self.assertEqual(result["outcome"], "learning_summary")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertEqual(result["source_kind"], "one_off_narration")
+        self.assertNotIn("method_contract", result)
+        self.assertNotIn("skill_md", result)
+
     def test_script_required_source_preserves_resource_in_internal_contract(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "script_required_method_source.md")
 

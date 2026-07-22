@@ -45,7 +45,7 @@ If source material is sparse, return `BLOCKED` with the exact missing method fie
 
 ## Decision Workflow
 
-1. Identify whether the source is a reusable workflow, narration, a passive summary, a one-off task, or too sparse to assess. Base a narration classification on affirmative title or leading-context evidence; do not demote a complete method because a later field says `not a one-off` or records a `no procedure` failure mode.
+1. Identify whether the source is a reusable workflow, narration, a passive summary, a one-off task, or too sparse to assess. Use affirmative title, leading-context, Purpose, or Trigger evidence for a one-off classification; do not demote a complete method because a field says `not a one-off` or because only a failure mode records `no procedure`.
 2. Separate durable procedure from incidental task details. Keep what changes future behavior; preserve exact operational details from authoritative material.
 3. Extract purpose, trigger branches, explicit invocation type, inputs, an ordered method, decisions, constraints, failure modes, outputs, resources, and verification.
 4. Convert corrections and failure modes into source-backed constraints, guardrails, or verification checks without paraphrasing away commands, paths, decisions, or errors.

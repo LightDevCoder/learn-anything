@@ -360,6 +360,13 @@ def _source_kind(source: str, sections: dict[str, list[str]]) -> str:
     context = _classification_context(source)
     if _has_affirmative_context_signal(context, ONE_OFF_PATTERNS, NEGATED_ONE_OFF_PATTERNS):
         return "one_off_narration"
+    structured_one_off_context = "\n".join(sections["purpose"] + sections["triggers"])
+    if _has_affirmative_context_signal(
+        structured_one_off_context,
+        ONE_OFF_PATTERNS,
+        NEGATED_ONE_OFF_PATTERNS,
+    ):
+        return "one_off_narration"
     if _has_affirmative_context_signal(
         context,
         PASSIVE_SUMMARY_PATTERNS,
