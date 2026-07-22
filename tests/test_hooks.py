@@ -204,6 +204,15 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         self.assertIn("TBD - decide later", result["placeholder_source_values"]["purpose"])
         self.assertIn("scripts/capture_docs.py: TBD", result["placeholder_source_values"]["resources"])
 
+    def test_inline_placeholder_markup_in_required_field_blocks_promotion(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "inline_placeholder_markup_method_source.md")
+
+        self.assertEqual(result["outcome"], "blocked")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertEqual(result["missing_information"], ["purpose"])
+        self.assertIn("<placeholder>", "\n".join(result["placeholder_source_values"]["purpose"]))
+
     def test_complete_method_with_negated_one_off_language_is_not_demoted(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "complete_method_with_safe_narration.md")
 
@@ -216,11 +225,19 @@ class SkillCandidateBuilderTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "method_contract")
         self.assertIn("no procedure", "\n".join(result["method_contract"]["failure_modes"]).lower())
 
-    def test_broader_negated_one_off_and_passive_language_is_not_demoted(self) -> None:
+    def test_broader_negated_one_off_and_passive_language_in_scope_is_not_demoted(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "complete_method_with_broader_negation.md")
 
         self.assertEqual(result["outcome"], "method_contract")
         self.assertEqual(result["source_kind"], "reusable_method")
+
+    def test_scope_one_off_signal_is_not_promoted(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "scope_one_off_method_source.md")
+
+        self.assertEqual(result["outcome"], "learning_summary")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertEqual(result["source_kind"], "one_off_narration")
+        self.assertNotIn("method_contract", result)
 
     def test_structured_affirmative_one_off_method_is_not_promoted(self) -> None:
         result = self._run_builder(source_file=FIXTURES / "structured_one_off_method_source.md")
@@ -260,6 +277,16 @@ class SkillCandidateBuilderTests(unittest.TestCase):
 
         self.assertEqual(result["outcome"], "method_contract")
         self.assertEqual(result["method_contract"]["invocation_type"], "model-invoked")
+
+    def test_conflicting_invocation_evidence_blocks_promotion(self) -> None:
+        result = self._run_builder(source_file=FIXTURES / "conflicting_invocation_method_source.md")
+
+        self.assertEqual(result["outcome"], "blocked")
+        self.assertEqual(result["promotion_status"], "not_promoted")
+        self.assertNotIn("method_contract", result)
+        self.assertEqual(result["missing_information"], ["invocation_type"])
+        self.assertEqual(result["invocation_type_conflict"], ["user-invoked", "model-invoked"])
+        self.assertIn("choose exactly one", result["required_source_gaps"]["invocation_type"].lower())
 
 
 if __name__ == "__main__":

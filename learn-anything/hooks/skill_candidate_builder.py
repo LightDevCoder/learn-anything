@@ -43,6 +43,7 @@ SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "resources": ("Resources", "Scripts", "References"),
     "verification": ("Verification", "Quality Checks", "Tests"),
     "corrections": ("Corrections", "Correction"),
+    "scope": ("Scope", "Context"),
 }
 
 SOURCE_GAP_GUIDANCE = {
@@ -58,6 +59,10 @@ SOURCE_GAP_GUIDANCE = {
     "resources": "State the required resource or explicitly record that no resource is needed.",
     "verification": "State how a future agent verifies that the result is acceptable.",
 }
+
+INVOCATION_CONFLICT_GUIDANCE = (
+    "Resolve conflicting invocation evidence: choose exactly one of user-invoked or model-invoked."
+)
 
 ONE_OFF_PATTERNS = (
     r"\bone[- ]off\b",
@@ -169,6 +174,11 @@ COMMAND_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 FENCED_CODE_BLOCK_PATTERN = re.compile(r"```[^\r\n]*\r?\n(.*?)```", flags=re.DOTALL)
+INLINE_PLACEHOLDER_MARKUP_PATTERN = re.compile(
+    r"(?:<\s*(?:placeholder|tbd|todo|unknown|to be determined|to be completed)\s*>|"
+    r"\[\s*(?:placeholder|tbd|todo|unknown|to be determined|to be completed)\s*\])",
+    flags=re.IGNORECASE,
+)
 WINDOWS_PATH_PATTERN = re.compile(r"[A-Za-z]:\\[^\s`\"'()\[\],;]+")
 POSIX_PATH_PATTERN = re.compile(r"(?<!\w)/(?:[\w.-]+/)+[\w.-]+")
 CORRECTION_PATTERN = re.compile(
@@ -281,13 +291,24 @@ def _ordered_values(lines: list[str]) -> list[str]:
     return _unique(values)
 
 
-def _normalize_invocation(values: list[str]) -> str | None:
+def _invocation_types(values: list[str]) -> list[str]:
     raw = " ".join(values).lower()
+    invocation_types: list[str] = []
     if re.search(r"\buser[ -]?invoked\b", raw):
-        return "user-invoked"
+        invocation_types.append("user-invoked")
     if re.search(r"\bmodel[ -]?invoked\b", raw):
-        return "model-invoked"
-    return None
+        invocation_types.append("model-invoked")
+    return invocation_types
+
+
+def _normalize_invocation(values: list[str]) -> str | None:
+    invocation_types = _invocation_types(values)
+    return invocation_types[0] if len(invocation_types) == 1 else None
+
+
+def _invocation_conflict(values: list[str]) -> list[str]:
+    invocation_types = _invocation_types(values)
+    return invocation_types if len(invocation_types) > 1 else []
 
 
 def _source_title(source: str) -> str:
@@ -320,6 +341,8 @@ def _is_placeholder(value: str) -> bool:
         return True
     bracketless_marker = normalized.strip("[]<>{}() ")
     if bracketless_marker in PLACEHOLDER_MARKERS:
+        return True
+    if INLINE_PLACEHOLDER_MARKUP_PATTERN.search(normalized):
         return True
     if normalized in GENERIC_BOILERPLATE_VALUES:
         return True
@@ -404,9 +427,11 @@ def _source_kind(source: str, sections: dict[str, list[str]]) -> str:
     context = _classification_context(source)
     if _has_affirmative_context_signal(context, ONE_OFF_PATTERNS, NEGATED_ONE_OFF_PATTERNS):
         return "one_off_narration"
-    structured_one_off_context = "\n".join(sections["purpose"] + sections["triggers"])
+    structured_classification_context = "\n".join(
+        sections["purpose"] + sections["triggers"] + sections["scope"]
+    )
     if _has_affirmative_context_signal(
-        structured_one_off_context,
+        structured_classification_context,
         ONE_OFF_PATTERNS,
         NEGATED_ONE_OFF_PATTERNS,
     ):
@@ -417,9 +442,8 @@ def _source_kind(source: str, sections: dict[str, list[str]]) -> str:
         NEGATED_PASSIVE_SUMMARY_PATTERNS,
     ):
         return "passive_summary"
-    structured_passive_context = "\n".join(sections["purpose"] + sections["triggers"])
     if _has_affirmative_context_signal(
-        structured_passive_context,
+        structured_classification_context,
         PASSIVE_SUMMARY_PATTERNS,
         NEGATED_PASSIVE_SUMMARY_PATTERNS,
     ):
@@ -506,6 +530,7 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
         "resources": _values(sections["resources"]),
         "verification": _values(sections["verification"]),
     }
+    invocation_conflict = _invocation_conflict(raw_values["invocation_type"])
     fields: dict[str, Any] = {
         "purpose": " ".join(raw_values["purpose"]),
         "triggers": raw_values["triggers"],
@@ -548,16 +573,26 @@ def build_candidate(data: dict[str, Any]) -> dict[str, Any]:
                 else _placeholder_values(raw_values[field])
             )
         }
-        return {
+        required_source_gaps = {field: SOURCE_GAP_GUIDANCE[field] for field in missing_information}
+        if invocation_conflict:
+            required_source_gaps["invocation_type"] = INVOCATION_CONFLICT_GUIDANCE
+        result: dict[str, Any] = {
             "outcome": "blocked",
             "promotion_status": "not_promoted",
             "source_kind": source_kind,
-            "reason": "A reusable method cannot be learned without the named source evidence.",
+            "reason": (
+                "A reusable method cannot be learned while its invocation-type evidence conflicts."
+                if invocation_conflict
+                else "A reusable method cannot be learned without the named source evidence."
+            ),
             "missing_information": missing_information,
-            "required_source_gaps": {field: SOURCE_GAP_GUIDANCE[field] for field in missing_information},
+            "required_source_gaps": required_source_gaps,
             "placeholder_source_values": placeholder_source_values,
             "learning_summary": _learning_summary(source, evidence),
         }
+        if invocation_conflict:
+            result["invocation_type_conflict"] = invocation_conflict
+        return result
 
     return {
         "outcome": "method_contract",

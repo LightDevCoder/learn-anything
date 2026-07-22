@@ -1,6 +1,10 @@
 # Durable Documentation Capture
 
-Purpose: This is not merely a one-off and is no longer a one-off; it is not merely a passive summary but a durable maintenance method.
+Purpose: Capture durable documentation guidance for future maintenance.
+
+## Scope
+
+This is not merely a one-off and is no longer a one-off; it is not merely a passive summary but a durable maintenance method.
 
 Triggers:
 
