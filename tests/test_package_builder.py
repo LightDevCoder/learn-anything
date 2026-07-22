@@ -68,6 +68,12 @@ class PackageBuilderTests(unittest.TestCase):
         self.assertEqual(normalized["constraints"][0], payload["method_contract"]["constraints"][0])
         self.assertEqual(normalized["failure_modes"][0], payload["method_contract"]["failure_modes"][0])
 
+        blocked = json.loads(json.dumps(complete_payload()))
+        blocked["method_contract"]["constraints"] = ["TBD"]
+        blocked["method_contract"]["failure_modes"] = ["TODO"]
+        with self.assertRaisesRegex(package_builder.PackageBuildError, "constraints"):
+            package_builder.validate_contract(blocked)
+
     def test_update_and_duplicate_noop_boundaries_are_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             first = package_builder.build_package(complete_payload(), temporary)
@@ -138,6 +144,30 @@ class PackageBuilderTests(unittest.TestCase):
             changed.write_text(changed.read_text(encoding="utf-8").replace("## Purpose", "## Purpose\n\nGenerated package"), encoding="utf-8")
             self.assertEqual(package_builder.install_package(source, install_root)["outcome"], "duplicate")
             self.assertEqual(package_builder.install_package(source, install_root, allow_update=True)["outcome"], "updated")
+
+    def test_install_update_removes_stale_managed_resource_but_keeps_unmanaged_file(self) -> None:
+        first = json.loads(json.dumps(complete_payload()))
+        first["method_contract"]["resources"] = ["scripts/capture_docs.py"]
+        second = json.loads(json.dumps(first))
+        second["method_contract"]["resources"] = ["none"]
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary) / "resources"
+            (resource_root / "scripts").mkdir(parents=True)
+            (resource_root / "scripts" / "capture_docs.py").write_text("print('capture')\n", encoding="utf-8")
+            build_root = Path(temporary) / "build"
+            first_package = Path(package_builder.build_package(first, build_root, resource_root=resource_root)["package"])
+            install_root = Path(temporary) / "installed"
+            package_builder.install_package(first_package, install_root)
+            destination = install_root / first_package.name
+            (destination / "user-owned.txt").write_text("keep\n", encoding="utf-8")
+
+            second_root = Path(temporary) / "build-second"
+            second_package = Path(package_builder.build_package(second, second_root)["package"])
+            self.assertEqual(package_builder.install_package(second_package, install_root)["outcome"], "duplicate")
+            self.assertEqual(package_builder.install_package(second_package, install_root, allow_update=True)["outcome"], "updated")
+            self.assertFalse((destination / "scripts" / "capture_docs.py").exists())
+            self.assertEqual((destination / "user-owned.txt").read_text(encoding="utf-8"), "keep\n")
+            self.assertEqual(package_builder.install_package(second_package, install_root)["outcome"], "no-op")
 
     def test_declared_resources_are_referenced_without_fabricating_files(self) -> None:
         payload = json.loads(json.dumps(complete_payload()))
