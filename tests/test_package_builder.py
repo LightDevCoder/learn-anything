@@ -63,7 +63,7 @@ class PackageBuilderTests(unittest.TestCase):
     def test_guardrail_mentioning_draft_tokens_is_not_treated_as_missing_evidence(self) -> None:
         payload = json.loads(json.dumps(complete_payload()))
         payload["method_contract"]["constraints"] = ["Do not leave TBD markers in the generated package."]
-        payload["method_contract"]["failure_modes"] = ["Fail if TODO markers remain after verification."]
+        payload["method_contract"]["failure_modes"] = ["Never leave TODO markers after verification."]
         normalized = package_builder.validate_contract(payload)
         self.assertEqual(normalized["constraints"][0], payload["method_contract"]["constraints"][0])
         self.assertEqual(normalized["failure_modes"][0], payload["method_contract"]["failure_modes"][0])
@@ -73,6 +73,17 @@ class PackageBuilderTests(unittest.TestCase):
         blocked["method_contract"]["failure_modes"] = ["TODO"]
         with self.assertRaisesRegex(package_builder.PackageBuildError, "constraints"):
             package_builder.validate_contract(blocked)
+
+        for field in ("constraints", "failure_modes"):
+            embedded = json.loads(json.dumps(complete_payload()))
+            embedded["method_contract"][field] = ["TBD - decide later"]
+            with self.assertRaisesRegex(package_builder.PackageBuildError, field):
+                package_builder.validate_contract(embedded)
+
+        resource_marker = json.loads(json.dumps(complete_payload()))
+        resource_marker["method_contract"]["resources"] = ["scripts/foo.py: TBD"]
+        with self.assertRaisesRegex(package_builder.PackageBuildError, "resources"):
+            package_builder.validate_contract(resource_marker)
 
     def test_update_and_duplicate_noop_boundaries_are_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
